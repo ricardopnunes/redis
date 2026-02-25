@@ -13,7 +13,6 @@
 
 const size_t k_max_msg = 4096;
 
-
 static void die(const char* msg)
 {
   const int err = errno;

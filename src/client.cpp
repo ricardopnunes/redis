@@ -14,7 +14,6 @@
 
 const size_t k_max_msg = 4096;
 
-
 static void msg(const char* msg)
 {
   fprintf(stderr, "%s\n", msg);
