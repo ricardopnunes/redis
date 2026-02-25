@@ -16,3 +16,4 @@ add_executable(redis_tests
 
 target_link_libraries(redis_tests PRIVATE myredis Catch2::Catch2WithMain)
 enable_sanitizers(redis_tests)
+enable_compiler_warnings(redis_tests)

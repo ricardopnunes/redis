@@ -1,0 +1,50 @@
+Checks: >
+  clang-analyzer-*,
+  cppcoreguidelines-*,
+  modernize-*,
+  performance-*,
+  readability-*,
+  bugprone-*,
+  hicpp-*,
+  portability-*,
+  misc-*
+
+WarningsAsErrors: '*'
+
+CheckOptions:
+  - key: modernize-use-nullptr.NullMacros
+    value: 'NULL'
+  - key: readability-identifier-naming.VariableCase
+    value: lower_case
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key: readability-identifier-naming.FunctionCase
+    value: camelBack
+  - key: cppcoreguidelines-pro-type-vararg.check-printf
+    value: '0'
+FormatStyle: file
+HeaderFilterRegex: 'src/|include/'
+AnalyzeTemporaryDtors: true
+UseColor: true
+---
+
+💡 Rodar manualmente:
+```bash
+clang-tidy $(find src -name '*.cpp') -- -Iinclude -std=c++20
+```
+
+---
+
+## ✅ Resumo: o trio moderno
+
+| Arquivo | Função | Onde usar |
+|----------|--------|-----------|
+| `cmake/ConfigWarnings.cmake` | Ativa todos os *warnings* e os trata como erro em debug | Incluído no `CMakeLists.txt` principal |
+| `cmake/Sanitizers.cmake` | Detecta *memory leaks* e *undefined behavior* | Incluído no `CMakeLists.txt` principal |
+| `.clang-format` | Padroniza a formatação do código | Executado manualmente ou via hook |
+| `.clang-tidy` | Verifica bugs, estilo e boas práticas | Executado manualmente ou via CI |
+
+---
+
+Se quiser, posso te gerar **todos esses arquivos + o CMakeLists.txt principal completo**, prontos pra copiar pra tua pasta `myredis/` e compilar com `cmake -S . -B build`.  
+Quer que eu monte esse pacote pronto?
