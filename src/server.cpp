@@ -61,8 +61,8 @@ static void msg(const char* msg)
 
 static void do_something(int connfd)
 {
-  char	  rbuf[64] = {};
-  ssize_t n	   = read(connfd, rbuf, sizeof(rbuf) - 1);
+  char    rbuf[64] = {};
+  ssize_t n        = read(connfd, rbuf, sizeof(rbuf) - 1);
 
   if (n < 0) {
     msg("read() error");
@@ -78,7 +78,7 @@ static void do_something(int connfd)
 static int32_t one_request(int connfd)
 {
   char rbuf[4 + k_max_msg];
-  errno	      = 0;
+  errno       = 0;
   int32_t err = read_full(connfd, rbuf, 4);
 
   if (err) {
@@ -104,7 +104,7 @@ static int32_t one_request(int connfd)
   printf("O Cliente Diz: %.*s\n", len, &rbuf[4]);
 
   const char reply[] = "World";
-  char	     wbuf[4 + sizeof(reply)];
+  char       wbuf[4 + sizeof(reply)];
 
   len = (uint32_t)strlen(reply);
   memcpy(wbuf, &len, 4);
@@ -123,9 +123,9 @@ int main()
 
   // Criando o bind para o socket
   struct sockaddr_in addr = {};
-  addr.sin_family	  = AF_INET;
-  addr.sin_port		  = htons(1234);
-  addr.sin_addr.s_addr	  = htonl(0);
+  addr.sin_family         = AF_INET;
+  addr.sin_port           = htons(1234);
+  addr.sin_addr.s_addr    = htonl(0);
 
   int rv = bind(fd, (const struct sockaddr*)&addr, sizeof(addr));
   if (rv) {
@@ -140,18 +140,18 @@ int main()
 
   while (true) {
     struct sockaddr_in client_addr = {};
-    socklen_t	       addrlen	   = sizeof(client_addr);
+    socklen_t          addrlen     = sizeof(client_addr);
     int connfd = accept(fd, (struct sockaddr*)&client_addr, &addrlen);
 
     if (connfd < 0) {
-      continue;	 // error
+      continue;  // error
     }
 
     while (true) {
       int32_t err = one_request(connfd);
 
       if (err) {
-	break;
+        break;
       }
     }
     do_something(connfd);
