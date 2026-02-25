@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/ricardo/projetos/cpp-teste/redis/build/_deps/catch2-subbuild/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
