@@ -24,7 +24,6 @@ CheckOptions:
     value: '0'
 FormatStyle: file
 HeaderFilterRegex: 'src/|include/'
-AnalyzeTemporaryDtors: true
 UseColor: true
 ---
 
