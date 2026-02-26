@@ -88,7 +88,7 @@ static Conn* handle_accept(int fd)
   }
 
   uint32_t ip = client_addr.sin_addr.s_addr;
-  fprintf(stderr, "new client from %u.%u.%u.%u:%u\n", ip & 255, (ip >> 8) & 255,
+  fprintf(stderr, "Novo cliente de: %u.%u.%u.%u:%u\n", ip & 255, (ip >> 8) & 255,
           (ip >> 16) & 255, ip >> 24, ntohs(client_addr.sin_port));
 
   fd_set_nb(connfd);
