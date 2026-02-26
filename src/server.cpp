@@ -1,17 +1,43 @@
+// STDLIB
 #include <assert.h>
 #include <errno.h>
-#include <netinet/in.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
+// SYSTEM
 #include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <poll.h>
+#include <arpa/inet.h>
+#include <fcntl.h>
+// C++
+#include <vector>
 
-#include <format>
-#include <iostream>
+const size_t k_max_msg = 32 << 20;
 
-const size_t k_max_msg = 4096;
+
+struct Conn {
+  int fd = -1;
+  // intencao da aplicacao para o event loop
+  bool want_read = false;
+  bool want_write = false;
+  bool want_close = false;
+  //input e output bufferezidos
+  std::vector<uint8_t> incoming; // Dados que serao parseados pela aplicacao
+  std::vector<uint8_t> outgoing; // Respostas geradas pela aplicacao
+};
+
+static void msg(const char* msg)
+{
+  fprintf(stderr, "%s\n", msg);
+}
+
+static void msg_errno(const char* msg)
+{
+  fprintf(stderr, "[errno:%d] %s\n", errno, msg);
+}
 
 static void die(const char* msg)
 {
@@ -20,6 +46,95 @@ static void die(const char* msg)
   fprintf(stderr, "[%d] %s\n", err, msg);
   abort();
 }
+
+static void fd_set_nb(int fd)
+{
+  errno =0;
+  int flags = fcntl(fd, F_GETFL, 0);
+  if(errno) {
+    die("fcntl error");
+    return;
+  }
+
+  flags |= O_NONBLOCK;
+
+  errno = 0;
+  (void)fcntl(fd,F_SETFL,flags);
+  if(errno) {
+    die("fcntl error");
+  }
+}
+
+static void buf_append(std::vector<uint8_t> &buf, const uint8_t *data, size_t len)
+{
+  buf.insert(buf.end(), data, data + len);
+}
+
+static void buf_consume(std::vector<uint8_t> &buf, size_t n)
+{
+  buf.erase(buf.begin(), buf.begin() +1);
+}
+
+static Conn *handle_accept(int fd)
+{
+  // accetp
+  struct sockaddr_in client_addr ={};
+  socklen_t addrlen = sizeof(client_addr);
+  int connfd = accept(fd, (struct sockaddr *)&client_addr, &addrlen);
+
+  if (connfd < 0) {
+    msg_errno("accept() error");
+    return NULL;
+  }
+
+  uint32_t ip = client_addr.sin_addr.s_addr;
+  fprintf(stderr, "new client from %u.%u.%u.%u:%u\n",
+    ip & 255, (ip >> 8) & 255, (ip >> 16) & 255, ip >> 24,
+    ntohs(client_addr.sin_port)
+  );
+
+  fd_set_nb(connfd);
+
+  Conn *conn = new Conn();
+  conn->fd = connfd;
+  conn->want_read = true;
+
+  return conn;
+}
+
+static bool try_one_request(Conn *conn)
+{
+  if(conn->incoming.size() < 4){
+    return false;
+  }
+
+  uint32_t len =0;
+  memcpy(&len, conn->incoming.data(), 4);
+
+  if(len > k_max_msg){
+    msg("Mensagem mtoo grande");
+    conn->want_close = true;
+    return false;
+  }
+
+  if(4 + len > conn->incoming.size()){
+    return false;
+  }
+
+  const uint8_t *request = &conn->incoming[4];
+
+  printf("O cliente diz: tam:%d dados:%.*s\n",
+    len, len<100 ? len : 100, request
+  );
+
+  buf_append(conn->outgoing, (const uint8_t *)&len, 4);
+  buf_append(conn->outgoing, request, len);
+
+  buf_consume(conn->incoming, 4 + len);
+
+  return true;
+}
+
 
 static auto read_full(int fd, char* buf, size_t n)
 {
@@ -54,10 +169,6 @@ static auto write_all(int fd, const char* buf, size_t n)
   return 0;
 }
 
-static void msg(const char* msg)
-{
-  fprintf(stderr, "%s\n", msg);
-}
 
 static void do_something(int connfd)
 {
@@ -158,6 +269,6 @@ int main()
     close(connfd);
   }
 
-  std::cout << fd;
+  printf("%d\n",fd);
   return 0;
 }
