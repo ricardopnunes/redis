@@ -13,8 +13,8 @@
 #include <sys/socket.h>
 #include <unistd.h>
 // C++
-#include <vector>
 #include <string>
+#include <vector>
 
 const size_t k_max_msg = 32 << 20;
 
@@ -59,33 +59,37 @@ static int32_t write_all(int fd, const uint8_t* buf, size_t n)
   return 0;
 }
 
-static void buf_append(std::vector<uint8_t> &buf, const uint8_t *data, size_t len){
+static void buf_append(std::vector<uint8_t>& buf, const uint8_t* data,
+                       size_t len)
+{
   buf.insert(buf.end(), data, data + len);
 }
 
-static int32_t send_req(int fd, const uint8_t *text, size_t len){
-  if(len > k_max_msg){
+static int32_t send_req(int fd, const uint8_t* text, size_t len)
+{
+  if (len > k_max_msg) {
     return -1;
   }
 
   std::vector<uint8_t> wbuf;
-  buf_append(wbuf, (const uint8_t *)&len, 4);
+  buf_append(wbuf, (const uint8_t*)&len, 4);
   buf_append(wbuf, text, len);
 
   return write_all(fd, wbuf.data(), wbuf.size());
 }
 
-
-static int32_t read_res(int fd){
+static int32_t read_res(int fd)
+{
   std::vector<uint8_t> rbuf;
   rbuf.resize(4);
-  errno = 0;
+  errno       = 0;
   int32_t err = read_full(fd, &rbuf[0], 4);
 
-  if(err){
-    if(errno == 0){
+  if (err) {
+    if (errno == 0) {
       msg("Fim do Arquivo EOF");
-    }else{
+    }
+    else {
       msg("read() error");
     }
     return err;
@@ -94,19 +98,19 @@ static int32_t read_res(int fd){
   uint32_t len = 0;
 
   memcpy(&len, rbuf.data(), 4);
-  if(len > k_max_msg){
+  if (len > k_max_msg) {
     msg("Mtooo Grande");
     return -1;
   }
 
-  rbuf.resize(4+len);
+  rbuf.resize(4 + len);
   err = read_full(fd, &rbuf[4], len);
-  if(err){
+  if (err) {
     msg("read() error");
     return err;
   }
 
-  printf("len:%u data:%.*s\n", len,len < 100 ? len : 100, &rbuf[4]);
+  printf("len:%u data:%.*s\n", len, len < 100 ? len : 100, &rbuf[4]);
 
   return 0;
 }
@@ -120,9 +124,9 @@ int main()
   }
 
   struct sockaddr_in addr = {};
-  addr.sin_family	  = AF_INET;
-  addr.sin_port		  = ntohs(1234);
-  addr.sin_addr.s_addr	  = ntohl(INADDR_LOOPBACK);
+  addr.sin_family         = AF_INET;
+  addr.sin_port           = ntohs(1234);
+  addr.sin_addr.s_addr    = ntohl(INADDR_LOOPBACK);
 
   int rv = connect(fd, (const struct sockaddr*)&addr, sizeof(addr));
 
@@ -131,27 +135,21 @@ int main()
   }
 
   std::vector<std::string> query_list = {
-    "hello 1", "hello 2", "Hello 3",
-    std::string(k_max_msg, 'z'),
-    "hello 5",
+      "hello 1", "hello 2", "Hello 3", std::string(k_max_msg, 'z'), "hello 5",
   };
 
-
-
-  for(const std::string &s : query_list){
-    int32_t err = send_req(fd,(uint8_t *)s.data(), s.size());
+  for (const std::string& s : query_list) {
+    int32_t err = send_req(fd, (uint8_t*)s.data(), s.size());
     if (err) {
       goto L_DONE;
     }
   }
-  for(size_t i = 0; i < query_list.size(); ++i){
+  for (size_t i = 0; i < query_list.size(); ++i) {
     int32_t err = read_res(fd);
     if (err) {
       goto L_DONE;
     }
   }
-
-
 
 L_DONE:
   close(fd);
