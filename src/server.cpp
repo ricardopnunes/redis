@@ -88,8 +88,9 @@ static Conn* handle_accept(int fd)
   }
 
   uint32_t ip = client_addr.sin_addr.s_addr;
-  fprintf(stderr, "Novo cliente de: %u.%u.%u.%u:%u\n", ip & 255, (ip >> 8) & 255,
-          (ip >> 16) & 255, ip >> 24, ntohs(client_addr.sin_port));
+  fprintf(stderr, "Novo cliente de: %u.%u.%u.%u:%u\n", ip & 255,
+          (ip >> 8) & 255, (ip >> 16) & 255, ip >> 24,
+          ntohs(client_addr.sin_port));
 
   fd_set_nb(connfd);
 
@@ -132,96 +133,76 @@ static bool try_one_request(Conn* conn)
   return true;
 }
 
-static auto read_full(int fd, char* buf, size_t n)
+static void handle_write(Conn* conn)
 {
-  while (n > 0) {
-    ssize_t rv = read(fd, buf, n);
-
-    if (rv <= 0) {
-      return -1;
-    }
-
-    assert((size_t)rv <= n);
-    n -= (size_t)rv;
-    buf += rv;
-  }
-
-  return 0;
-}
-
-static auto write_all(int fd, const char* buf, size_t n)
-{
-  while (n > 0) {
-    ssize_t rv = write(fd, buf, n);
-
-    if (rv <= 0) {
-      return -1;
-    }
-
-    assert((size_t)rv <= n);
-    n -= (size_t)rv;
-    buf += rv;
-  }
-  return 0;
-}
-
-static void do_something(int connfd)
-{
-  char    rbuf[64] = {};
-  ssize_t n        = read(connfd, rbuf, sizeof(rbuf) - 1);
-
-  if (n < 0) {
-    msg("read() error");
+  assert(conn->outgoing.size() > 0);
+  ssize_t rv = write(conn->fd, &conn->outgoing[0], conn->outgoing.size());
+  if (rv < 0 && errno == EAGAIN) {
     return;
   }
 
-  printf("O cliente diz: %s\n", rbuf);
+  if (rv < 0) {
+    msg_errno("write() error");
+    conn->want_close = true;
+    return;
+  }
 
-  char wbuf[] = "world";
-  write(connfd, wbuf, strlen(wbuf));
+  buf_consume(conn->outgoing, (size_t)rv);
+
+  if (conn->outgoing.size() == 0) {
+    conn->want_read  = true;
+    conn->want_write = false;
+  }
 }
 
-static int32_t one_request(int connfd)
+static void handle_read(Conn* conn)
 {
-  char rbuf[4 + k_max_msg];
-  errno       = 0;
-  int32_t err = read_full(connfd, rbuf, 4);
+  uint8_t buf[64 * 1024];
+  ssize_t rv = read(conn->fd, buf, sizeof(buf));
 
-  if (err) {
-    msg(errno == 0 ? "EOF" : "read() error");
-    return err;
+  if (rv < 0 && errno == EAGAIN) {
+    return;
   }
 
-  uint32_t len = 0;
-  memcpy(&len, rbuf, 4);
-
-  if (len > k_max_msg) {
-    msg("Muitoooo Grande essa mensagem");
-    return -1;
+  if (rv < 0) {
+    msg_errno("read() error");
+    conn->want_close = true;
+    return;
   }
 
-  // Corpo da requisicao
-  err = read_full(connfd, &rbuf[4], len);
-  if (err) {
-    msg("read) error");
-    return err;
+  if (rv == 0) {
+    if (conn->incoming.size() == 0) {
+      msg("cliente fechado");
+    }
+    else {
+      msg("Fim do arquivo");
+    }
+
+    conn->want_close = true;
+    return;
   }
 
-  printf("O Cliente Diz: %.*s\n", len, &rbuf[4]);
+  buf_append(conn->incoming, buf, (size_t)rv);
 
-  const char reply[] = "World";
-  char       wbuf[4 + sizeof(reply)];
+  while (try_one_request(conn)) {
+  }
 
-  len = (uint32_t)strlen(reply);
-  memcpy(wbuf, &len, 4);
-  memcpy(&wbuf[4], reply, len);
-  return write_all(connfd, wbuf, 4 + len);
+  if (conn->outgoing.size() > 0) {
+    conn->want_read  = false;
+    conn->want_write = true;
+
+    return handle_write(conn);
+  }
 }
 
 int main()
 {
   // Criando o socket
   int fd = socket(AF_INET, SOCK_STREAM, 0);
+
+  if (fd < 0) {
+    die("socket()");
+  }
 
   // Setando valores defaults
   int val = 1;
@@ -238,32 +219,81 @@ int main()
     die("bind()");
   }
 
+  fd_set_nb(fd);
   // Criando o listener para o socket
   rv = listen(fd, SOMAXCONN);
   if (rv) {
     die("listen()");
   }
 
-  while (true) {
-    struct sockaddr_in client_addr = {};
-    socklen_t          addrlen     = sizeof(client_addr);
-    int connfd = accept(fd, (struct sockaddr*)&client_addr, &addrlen);
+  std::vector<Conn*> fd2conn;
 
-    if (connfd < 0) {
-      continue;  // error
+  std::vector<struct pollfd> poll_args;
+
+  while (true) {
+    poll_args.clear();
+
+    struct pollfd pfd = {fd, POLLIN, 0};
+    poll_args.push_back(pfd);
+
+    for (Conn* conn : fd2conn) {
+      if (!conn) {
+        continue;
+      }
+
+      struct pollfd pfd = {conn->fd, POLLERR, 0};
+
+      if (conn->want_read) {
+        pfd.events |= POLLIN;
+      }
+      if (conn->want_write) {
+        pfd.events |= POLLOUT;
+      }
+      poll_args.push_back(pfd);
     }
 
-    while (true) {
-      int32_t err = one_request(connfd);
+    int rv = poll(poll_args.data(), (nfds_t)poll_args.size(), -1);
+    if (rv < 0 && errno == EINTR) {
+      continue;
+    }
 
-      if (err) {
-        break;
+    if (rv < 0) {
+      die("poll");
+    }
+
+    if (poll_args[0].revents) {
+      if (Conn* conn = handle_accept(fd)) {
+        if (fd2conn.size() <= (size_t)conn->fd) {
+          fd2conn.resize(conn->fd + 1);
+        }
+        assert(!fd2conn[conn->fd]);
+        fd2conn[conn->fd] = conn;
       }
     }
-    do_something(connfd);
-    close(connfd);
-  }
 
-  printf("%d\n", fd);
+    for (size_t i = 1; i < poll_args.size(); ++i) {
+      uint32_t ready = poll_args[i].revents;
+
+      if (ready == 0) {
+        continue;
+      }
+
+      Conn* conn = fd2conn[poll_args[i].fd];
+      if (ready & POLLIN) {
+        assert(conn->want_read);
+        handle_read(conn);
+      }
+      if (ready & POLLOUT) {
+        assert(conn->want_write);
+        handle_write(conn);
+      }
+
+      if ((ready & POLLERR) || conn->want_close) {
+        (void)close(conn->fd);
+        fd2conn[conn->fd] = NULL;
+        delete conn;
+      }
+    }
+  }
   return 0;
 }
